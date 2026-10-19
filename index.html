@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AISG 红包作品投票方案确认</title>
+  <script src="assets/vue.global.prod.js"></script>
+  <link rel="stylesheet" href="index.css">
+</head>
+<body>
+<div id="app" v-cloak>
+  <header class="review-bar">
+    <div class="review-title">AISG 投票交互方案</div>
+    <div class="scheme-switch" aria-label="方案切换">
+      <button :class="{active:scheme===1}" @click="switchScheme(1)">方案 1 · 点图选择</button>
+      <button :class="{active:scheme===2}" @click="switchScheme(2)">方案 2 · 按钮选择</button>
+    </div>
+    <div class="review-actions">
+      <select v-model="demoState" aria-label="演示状态">
+        <option value="normal">演示状态：正常</option>
+        <option value="loading">演示状态：加载中</option>
+        <option value="empty">演示状态：空数据</option>
+        <option value="error">演示状态：加载失败</option>
+      </select>
+    </div>
+  </header>
+
+  <main class="page">
+    <section class="hero">
+      <h1>Young Warriors Hongbao Design Competition</h1>
+      <p>Choose your favorite artwork and submit your vote.</p>
+    </section>
+    <section class="filters" aria-label="作品分类">
+      <div class="primary-tabs">
+        <button v-for="item in primaryCategories" :key="item" class="tab-primary" :class="{active:primary===item}" @click="selectPrimary(item)">{{ item }}</button>
+      </div>
+      <div class="secondary-tabs">
+        <button v-for="item in secondaryOptions" :key="item" class="tab-secondary" :class="{active:secondary===item}" @click="secondary=item">{{ item }}</button>
+      </div>
+    </section>
+
+    <section class="content-card">
+      <div class="section-head">
+        <div class="label"><span class="required">*</span>Artwork Selection</div>
+        <div class="instruction" v-if="scheme===1">Click an artwork to select it. Use the eye button to preview.</div>
+        <div class="instruction" v-else>Click an artwork to preview it. Use “Vote” to select.</div>
+      </div>
+
+      <div v-if="demoState==='loading'" class="skeleton-grid" aria-label="加载中"><div class="skeleton" v-for="n in 4" :key="n"></div></div>
+      <div v-else-if="demoState==='empty'" class="state-box"><div><div class="state-icon">◇</div><h3>No artwork yet</h3><p>There are no artworks in this category.</p></div></div>
+      <div v-else-if="demoState==='error'" class="state-box"><div><div class="state-icon">!</div><h3>Unable to load artworks</h3><p>Please check your connection and try again.</p><button class="retry" @click="demoState='normal'">Try again</button></div></div>
+      <template v-else>
+        <div class="art-grid">
+          <article v-for="(art,index) in visibleArtworks" :key="art.id" class="art-card" :class="{selected:selectedId===art.id}">
+            <button class="art-click" @click="onArtworkClick(art)" :aria-label="scheme===1 ? '选择作品 '+art.id : '预览作品 '+art.id">
+              <div class="artwork-wrap" :class="'variant-'+(index+1)">
+                <img src="assets/artwork-001.png" :alt="'Artwork '+art.id">
+              </div>
+            </button>
+            <button v-if="scheme===1" class="eye-btn" @click.stop="openPreview(art)" :aria-label="'放大预览作品 '+art.id" title="Preview artwork">
+              <svg class="eye-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="2.8" stroke="currentColor" stroke-width="1.8"/></svg>
+            </button>
+            <div class="card-foot">
+              <span class="radio-dot" aria-hidden="true"></span><span class="art-no">{{ art.id }}</span>
+              <button v-if="scheme===2" class="vote-btn" :class="{selected:selectedId===art.id}" @click="selectArtwork(art)">{{ selectedId===art.id ? 'Selected' : 'Vote' }}</button>
+            </div>
+          </article>
+        </div>
+        <div class="submit-wrap"><button class="submit-btn" :disabled="submitting" @click="submitVote">{{ submitting ? 'Submitting…' : 'Submit Vote' }}</button></div>
+      </template>
+    </section>
+  </main>
+
+  <div v-if="previewArt" class="image-viewer" role="dialog" aria-modal="true" aria-label="作品大图预览" @click.self="closePreview" @wheel.prevent="onPreviewWheel">
+    <div class="viewer-caption">Artwork {{ previewArt.id }}</div>
+    <button class="viewer-close" @click="closePreview" aria-label="关闭预览">×</button>
+    <div class="viewer-stage" @click.self="closePreview">
+      <img class="viewer-image" src="assets/artwork-001.png" :alt="'Artwork '+previewArt.id+' large preview'" :style="previewTransform" draggable="false">
+    </div>
+    <div class="viewer-tools" aria-label="图片预览工具栏">
+      <button @click="flipY=-flipY" title="上下翻转">↕</button><button @click="flipX=-flipX" title="左右翻转">↔</button>
+      <button @click="rotatePreview(-90)" title="向左旋转">↶</button><button @click="rotatePreview(90)" title="向右旋转">↷</button>
+      <span class="divider"></span><button @click="zoomPreview(-.2)" :disabled="previewScale<=.4" title="缩小">−</button>
+      <span class="scale-label">{{ Math.round(previewScale*100) }}%</span><button @click="zoomPreview(.2)" :disabled="previewScale>=3" title="放大">＋</button>
+      <button @click="resetPreview" title="恢复原始比例">1:1</button>
+    </div>
+  </div>
+
+  <div v-if="toast" class="toast" :class="{error:toast.type==='error'}" role="status"><div>{{ toast.type==='error' ? '!' : '✓' }}</div><div><strong>{{ toast.title }}</strong><span>{{ toast.message }}</span></div></div>
+</div>
+
+<script>
+const { createApp } = Vue;
+createApp({
+  data(){return{
+    scheme:1,primary:'Chinese Culture',secondary:'All',selectedId:null,previewArt:null,previewScale:1,previewRotate:0,flipX:1,flipY:1,submitting:false,demoState:'normal',toast:null,
+    primaryCategories:['Chinese Culture','Child Friendly City'],
+    categoryMap:{'Chinese Culture':['G2-G3','G4-G5','G6-G8','G9-Adult','P-G1'],'Child Friendly City':['G2-G3','G4-G5','G6-G8','G9-Adult','P-G1']},
+    artworks:[{id:'001',group:'G2-G3'},{id:'002',group:'G4-G5'},{id:'003',group:'G6-G8'},{id:'004',group:'G9-Adult'}]
+  }},
+  computed:{
+    secondaryOptions(){return ['All',...this.categoryMap[this.primary]]},
+    visibleArtworks(){return this.secondary==='All' ? this.artworks : this.artworks.filter(a=>a.group===this.secondary)},
+    previewTransform(){return {transform:`scale(${this.previewScale*this.flipX},${this.previewScale*this.flipY}) rotate(${this.previewRotate}deg)`}}
+  },
+  methods:{
+    switchScheme(n){this.scheme=n;this.selectedId=null;this.notify('方案已切换',n===1?'点击作品图片进行选择；眼睛按钮只预览。':'方案 2 不显示眼睛；点击图片放大，点击 Vote 按钮才选择。')},
+    selectPrimary(item){this.primary=item;this.secondary='All';this.selectedId=null},
+    onArtworkClick(art){this.scheme===1?this.selectArtwork(art):this.openPreview(art)},
+    selectArtwork(art){this.selectedId=art.id},openPreview(art){this.resetPreview();this.previewArt=art},
+    closePreview(){this.previewArt=null},zoomPreview(delta){this.previewScale=Math.min(3,Math.max(.4,Number((this.previewScale+delta).toFixed(1))))},
+    rotatePreview(delta){this.previewRotate=(this.previewRotate+delta)%360},resetPreview(){this.previewScale=1;this.previewRotate=0;this.flipX=1;this.flipY=1},
+    onPreviewWheel(e){this.zoomPreview(e.deltaY<0?.2:-.2)},
+    submitVote(){if(!this.selectedId){this.notify('Please select an artwork','Choose one artwork before submitting.','error');return}this.submitting=true;setTimeout(()=>{this.submitting=false;this.notify('Vote submitted','Artwork '+this.selectedId+' has been submitted successfully.')},900)},
+    notify(title,message,type='success'){this.toast={title,message,type};clearTimeout(this.toastTimer);this.toastTimer=setTimeout(()=>this.toast=null,3200)},
+    onKeydown(e){if(e.key==='Escape'&&this.previewArt)this.closePreview()}
+  },
+  mounted(){window.addEventListener('keydown',this.onKeydown)},beforeUnmount(){window.removeEventListener('keydown',this.onKeydown)}
+}).mount('#app');
+</script>
+</body>
+</html>
