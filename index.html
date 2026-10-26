@@ -28,7 +28,7 @@
   <main class="page">
     <section class="hero">
       <h1>Young Warriors Hongbao Design Competition</h1>
-      <p>Choose your favorite artwork and submit your vote.</p>
+      <p>Vote for your favorite artwork and place a charity auction bid on selected works.</p>
     </section>
     <section class="filters" aria-label="作品分类">
       <div class="primary-tabs">
@@ -42,15 +42,20 @@
     <section class="content-card">
       <div class="section-head">
         <div class="label"><span class="required">*</span>Artwork Selection</div>
-        <div class="instruction" v-if="scheme===1">Click an artwork to select it. Use the eye button to preview.</div>
-        <div class="instruction" v-else>Click an artwork to preview it. Use “Vote” to select.</div>
+        <div class="section-head-right">
+          <div class="instruction" v-if="scheme===1">Click an artwork to select it. Use the eye button to preview. “Bid” opens the charity auction form.</div>
+          <button class="bid-filter" :class="{active:auctionOnly}" :aria-pressed="auctionOnly" @click="auctionOnly=!auctionOnly">
+            <span class="bid-filter-icon">◇</span>{{ auctionOnly ? 'Showing Bid Items' : 'Bid Only' }}
+          </button>
+        </div>
       </div>
 
       <div v-if="demoState==='loading'" class="skeleton-grid" aria-label="加载中"><div class="skeleton" v-for="n in 4" :key="n"></div></div>
       <div v-else-if="demoState==='empty'" class="state-box"><div><div class="state-icon">◇</div><h3>No artwork yet</h3><p>There are no artworks in this category.</p></div></div>
       <div v-else-if="demoState==='error'" class="state-box"><div><div class="state-icon">!</div><h3>Unable to load artworks</h3><p>Please check your connection and try again.</p><button class="retry" @click="demoState='normal'">Try again</button></div></div>
       <template v-else>
-        <div class="art-grid">
+        <div v-if="visibleArtworks.length===0" class="state-box"><div><div class="state-icon">◇</div><h3>No auction artwork found</h3><p>There are no charity auction artworks in this category.</p><button v-if="auctionOnly" class="retry" @click="auctionOnly=false">Show all artworks</button></div></div>
+        <div v-else class="art-grid">
           <article v-for="(art,index) in visibleArtworks" :key="art.id" class="art-card" :class="{selected:selectedId===art.id}">
             <button class="art-click" @click="onArtworkClick(art)" :aria-label="scheme===1 ? '选择作品 '+art.id : '预览作品 '+art.id">
               <div class="artwork-wrap" :class="'variant-'+(index+1)">
@@ -62,11 +67,15 @@
             </button>
             <div class="card-foot">
               <span class="radio-dot" aria-hidden="true"></span><span class="art-no">{{ art.id }}</span>
-              <button v-if="scheme===2" class="vote-btn" :class="{selected:selectedId===art.id}" @click="selectArtwork(art)">{{ selectedId===art.id ? 'Selected' : 'Vote' }}</button>
+              <span v-if="art.auction" class="auction-tag">Charity Auction</span>
+              <div class="card-actions">
+                <button v-if="scheme===2" class="vote-btn" :class="{selected:selectedId===art.id}" @click="selectArtwork(art)">{{ selectedId===art.id ? 'Selected' : 'Vote' }}</button>
+                <button v-if="art.auction" class="bid-btn" @click="openBid(art)">Bid</button>
+              </div>
             </div>
           </article>
         </div>
-        <div class="submit-wrap"><button class="submit-btn" :disabled="submitting" @click="submitVote">{{ submitting ? 'Submitting…' : 'Submit Vote' }}</button></div>
+        <div v-if="visibleArtworks.length" class="submit-wrap"><button class="submit-btn" :disabled="submitting" @click="submitVote">{{ submitting ? 'Submitting…' : 'Submit Vote' }}</button></div>
       </template>
     </section>
   </main>
@@ -86,6 +95,36 @@
     </div>
   </div>
 
+  <div v-if="bidArt" class="overlay" role="dialog" aria-modal="true" aria-labelledby="bid-title" @click.self="closeBid">
+    <section class="modal bid-modal">
+      <div class="modal-head">
+        <div><span class="modal-kicker">Charity Auction</span><h2 id="bid-title">Place a Bid · Artwork {{ bidArt.id }}</h2></div>
+        <button class="close" @click="closeBid" aria-label="Close bidding form">×</button>
+      </div>
+      <form @submit.prevent="submitBid" novalidate>
+        <div class="bid-body">
+          <div class="bid-art-summary">
+            <img src="assets/artwork-001.png" :alt="'Artwork '+bidArt.id">
+            <div><strong>Artwork {{ bidArt.id }}</strong><span>{{ bidArt.group }} · {{ primary }}</span><p>Enter your bid and contact details below.</p></div>
+          </div>
+          <div class="form-grid">
+            <div class="field full"><label for="amount">Bid Amount (CNY) <em>*</em></label><div class="money-input"><span>¥</span><input id="amount" v-model.trim="bidForm.amount" type="number" min="1" step="1" inputmode="decimal" placeholder="Enter amount"></div><small v-if="bidErrors.amount" class="field-error">{{ bidErrors.amount }}</small></div>
+            <div class="field"><label for="bidderName">Your Name <em>*</em></label><input id="bidderName" v-model.trim="bidForm.name" type="text" placeholder="Full name"><small v-if="bidErrors.name" class="field-error">{{ bidErrors.name }}</small></div>
+            <div class="field"><label for="role">Role <em>*</em></label><select id="role" v-model="bidForm.role"><option value="" disabled>Select role</option><option v-for="role in roles" :key="role" :value="role">{{ role }}</option></select><small v-if="bidErrors.role" class="field-error">{{ bidErrors.role }}</small></div>
+            <template v-if="bidForm.role==='Parent'">
+              <div class="field"><label for="childName">Child's Name <em>*</em></label><input id="childName" v-model.trim="bidForm.childName" type="text" placeholder="Child's full name"><small v-if="bidErrors.childName" class="field-error">{{ bidErrors.childName }}</small></div>
+              <div class="field"><label for="childGrade">Child's Grade <em>*</em></label><select id="childGrade" v-model="bidForm.childGrade"><option value="" disabled>Select grade</option><option v-for="grade in grades" :key="grade">{{ grade }}</option></select><small v-if="bidErrors.childGrade" class="field-error">{{ bidErrors.childGrade }}</small></div>
+            </template>
+            <div class="field"><label for="phone">Mobile Number <em>*</em></label><input id="phone" v-model.trim="bidForm.phone" type="tel" placeholder="e.g. +65 9123 4567"><small v-if="bidErrors.phone" class="field-error">{{ bidErrors.phone }}</small></div>
+            <div class="field"><label for="email">Email <em>*</em></label><input id="email" v-model.trim="bidForm.email" type="email" placeholder="name@example.com"><small v-if="bidErrors.email" class="field-error">{{ bidErrors.email }}</small></div>
+          </div>
+          <p class="privacy-note">Your contact details will only be used by AISG to follow up on this charity auction bid.</p>
+        </div>
+        <div class="modal-footer"><button type="button" class="btn-secondary" @click="closeBid">Cancel</button><button type="submit" class="btn-primary" :disabled="bidSubmitting">{{ bidSubmitting ? 'Submitting…' : 'Submit Bid' }}</button></div>
+      </form>
+    </section>
+  </div>
+
   <div v-if="toast" class="toast" :class="{error:toast.type==='error'}" role="status"><div>{{ toast.type==='error' ? '!' : '✓' }}</div><div><strong>{{ toast.title }}</strong><span>{{ toast.message }}</span></div></div>
 </div>
 
@@ -93,14 +132,16 @@
 const { createApp } = Vue;
 createApp({
   data(){return{
-    scheme:1,primary:'Chinese Culture',secondary:'All',selectedId:null,previewArt:null,previewScale:1,previewRotate:0,flipX:1,flipY:1,submitting:false,demoState:'normal',toast:null,
+    scheme:2,primary:'Chinese Culture',secondary:'All',auctionOnly:false,selectedId:null,previewArt:null,previewScale:1,previewRotate:0,flipX:1,flipY:1,submitting:false,demoState:'normal',toast:null,bidArt:null,bidSubmitting:false,bidErrors:{},
     primaryCategories:['Chinese Culture','Child Friendly City'],
     categoryMap:{'Chinese Culture':['G2-G3','G4-G5','G6-G8','G9-Adult','P-G1'],'Child Friendly City':['G2-G3','G4-G5','G6-G8','G9-Adult','P-G1']},
-    artworks:[{id:'001',group:'G2-G3'},{id:'002',group:'G4-G5'},{id:'003',group:'G6-G8'},{id:'004',group:'G9-Adult'}]
+    roles:['Parent','Student','Staff & Faculty','Partners','Alumni','Community Member','Other'],grades:['P1','P2','G1','G2','G3','G4','G5','G6','G7','G8','G9','G10','G11','G12'],
+    bidForm:{amount:'',name:'',role:'',childName:'',childGrade:'',phone:'',email:''},
+    artworks:[{id:'001',group:'G2-G3',auction:true},{id:'002',group:'G4-G5',auction:false},{id:'003',group:'G6-G8',auction:true},{id:'004',group:'G9-Adult',auction:false}]
   }},
   computed:{
     secondaryOptions(){return ['All',...this.categoryMap[this.primary]]},
-    visibleArtworks(){return this.secondary==='All' ? this.artworks : this.artworks.filter(a=>a.group===this.secondary)},
+    visibleArtworks(){return this.artworks.filter(a=>(this.secondary==='All'||a.group===this.secondary)&&(!this.auctionOnly||a.auction))},
     previewTransform(){return {transform:`scale(${this.previewScale*this.flipX},${this.previewScale*this.flipY}) rotate(${this.previewRotate}deg)`}}
   },
   methods:{
@@ -108,12 +149,16 @@ createApp({
     selectPrimary(item){this.primary=item;this.secondary='All';this.selectedId=null},
     onArtworkClick(art){this.scheme===1?this.selectArtwork(art):this.openPreview(art)},
     selectArtwork(art){this.selectedId=art.id},openPreview(art){this.resetPreview();this.previewArt=art},
+    openBid(art){this.bidArt=art;this.bidErrors={};this.bidForm={amount:'',name:'',role:'',childName:'',childGrade:'',phone:'',email:''}},
+    closeBid(){if(!this.bidSubmitting)this.bidArt=null},
+    validateBid(){const f=this.bidForm,e={};if(!f.amount||Number(f.amount)<=0)e.amount='Enter a valid bid amount.';if(!f.name)e.name='Enter your name.';if(!f.role)e.role='Select your role.';if(f.role==='Parent'&&!f.childName)e.childName="Enter your child's name.";if(f.role==='Parent'&&!f.childGrade)e.childGrade="Select your child's grade.";if(!f.phone)e.phone='Enter your mobile number.';if(!f.email)e.email='Enter your email.';else if(!/^\S+@\S+\.\S+$/.test(f.email))e.email='Enter a valid email address.';this.bidErrors=e;return Object.keys(e).length===0},
+    submitBid(){if(!this.validateBid())return;this.bidSubmitting=true;setTimeout(()=>{const id=this.bidArt.id;const amount=Number(this.bidForm.amount).toLocaleString('zh-CN');this.bidSubmitting=false;this.bidArt=null;this.notify('Bid submitted','Your ¥'+amount+' bid for Artwork '+id+' has been recorded.')},900)},
     closePreview(){this.previewArt=null},zoomPreview(delta){this.previewScale=Math.min(3,Math.max(.4,Number((this.previewScale+delta).toFixed(1))))},
     rotatePreview(delta){this.previewRotate=(this.previewRotate+delta)%360},resetPreview(){this.previewScale=1;this.previewRotate=0;this.flipX=1;this.flipY=1},
     onPreviewWheel(e){this.zoomPreview(e.deltaY<0?.2:-.2)},
     submitVote(){if(!this.selectedId){this.notify('Please select an artwork','Choose one artwork before submitting.','error');return}this.submitting=true;setTimeout(()=>{this.submitting=false;this.notify('Vote submitted','Artwork '+this.selectedId+' has been submitted successfully.')},900)},
     notify(title,message,type='success'){this.toast={title,message,type};clearTimeout(this.toastTimer);this.toastTimer=setTimeout(()=>this.toast=null,3200)},
-    onKeydown(e){if(e.key==='Escape'&&this.previewArt)this.closePreview()}
+    onKeydown(e){if(e.key==='Escape'){if(this.previewArt)this.closePreview();else if(this.bidArt)this.closeBid()}}
   },
   mounted(){window.addEventListener('keydown',this.onKeydown)},beforeUnmount(){window.removeEventListener('keydown',this.onKeydown)}
 }).mount('#app');

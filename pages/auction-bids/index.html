@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Charity Auction Bids</title>
+  <script src="../voting-confirmation/assets/vue.global.prod.js"></script>
+  <link rel="stylesheet" href="index.css">
+  <style>table{min-width:1250px}</style>
+</head>
+<body>
+<div id="app" v-cloak>
+  <header class="topbar"><div><strong>AISG Forms</strong><span>Administration</span></div><div class="admin-user">Administrator</div></header>
+  <main class="page">
+    <div class="breadcrumb">Forms / Young Warriors Hongbao Design Competition / Charity Auction</div>
+    <section class="page-head">
+      <div><h1>Charity Auction Bids</h1><p>Review and download the bidding list submitted before the event deadline.</p></div>
+      <button class="export-btn" @click="downloadCsv"><span>↓</span> Download Bidding List</button>
+    </section>
+
+    <section class="summary-grid">
+      <article><span>Total Bids</span><strong>{{ bids.length }}</strong></article>
+      <article><span>Auction Artworks</span><strong>{{ artworkCount }}</strong></article>
+      <article><span>Highest Submitted Bid</span><strong>¥{{ highestBid.toLocaleString('zh-CN') }}</strong></article>
+      <article><span>Last Submission</span><strong class="small">{{ latestTime }}</strong></article>
+    </section>
+
+    <section class="table-card">
+      <div class="toolbar">
+        <div class="search"><span>⌕</span><input v-model.trim="keyword" type="search" placeholder="Search artwork, bidder, phone or email"></div>
+        <select v-model="artworkFilter"><option value="All">All auction artworks</option><option v-for="id in artworkIds" :key="id" :value="id">Artwork {{ id }}</option></select>
+        <select v-model="roleFilter"><option value="All">All roles</option><option v-for="role in roles" :key="role">{{ role }}</option></select>
+        <button class="reset-btn" @click="resetFilters">Reset</button>
+      </div>
+
+      <div v-if="demoState==='loading'" class="state">Loading bidding records…</div>
+      <div v-else-if="demoState==='error'" class="state error"><strong>Unable to load bidding records</strong><span>Please try again.</span><button @click="demoState='normal'">Try again</button></div>
+      <div v-else-if="filteredBids.length===0" class="state"><strong>No matching bids</strong><span>Adjust the filters to view other records.</span></div>
+      <div v-else class="table-scroll">
+        <table>
+          <thead><tr><th>Artwork</th><th>Bid Amount</th><th>Bidder</th><th>Role</th><th>Child / Grade</th><th>Mobile</th><th>Email</th><th>Submitted At</th></tr></thead>
+          <tbody><tr v-for="bid in filteredBids" :key="bid.id"><td><strong>{{ bid.artwork }}</strong><span class="category">{{ bid.category }} · {{ bid.group }}</span></td><td class="amount">¥{{ bid.amount.toLocaleString('zh-CN') }}</td><td>{{ bid.name }}</td><td><span class="role-tag">{{ bid.role }}</span></td><td>{{ bid.role==='Parent' ? bid.childName+' / '+bid.childGrade : '—' }}</td><td>{{ bid.phone }}</td><td>{{ bid.email }}</td><td>{{ bid.submittedAt }}</td></tr></tbody>
+        </table>
+      </div>
+      <div class="table-foot"><span>Showing {{ filteredBids.length }} of {{ bids.length }} bids</span><label>Prototype states: <select v-model="demoState"><option value="normal">Normal</option><option value="loading">Loading</option><option value="error">Error</option><option value="empty">Empty</option></select></label></div>
+    </section>
+  </main>
+  <div v-if="toast" class="toast"><strong>✓ Export ready</strong><span>{{ toast }}</span></div>
+</div>
+<script>
+const {createApp}=Vue;
+createApp({
+  data(){return{keyword:'',artworkFilter:'All',roleFilter:'All',demoState:'normal',toast:'',roles:['Parent','Staff & Faculty','Partners','Alumni','Community Member'],bids:[
+    {id:1,artwork:'001',category:'Chinese Culture',group:'G2-G3',amount:288,name:'Michelle Tan',role:'Parent',childName:'Lucas Tan',childGrade:'G3',phone:'+65 9123 4567',email:'michelle.tan@example.com',submittedAt:'22 Oct 2026, 09:42'},
+    {id:2,artwork:'003',category:'Chinese Culture',group:'G6-G8',amount:520,name:'David Lim',role:'Staff & Faculty',childName:'',childGrade:'',phone:'+65 9234 5678',email:'david.lim@example.com',submittedAt:'22 Oct 2026, 10:18'},
+    {id:3,artwork:'001',category:'Chinese Culture',group:'G2-G3',amount:360,name:'Rachel Wong',role:'Parent',childName:'Emma Wong',childGrade:'G2',phone:'+65 9345 6789',email:'rachel.wong@example.com',submittedAt:'22 Oct 2026, 11:07'},
+    {id:4,artwork:'003',category:'Chinese Culture',group:'G6-G8',amount:680,name:'James Lee',role:'Alumni',childName:'',childGrade:'',phone:'+65 9456 7890',email:'james.lee@example.com',submittedAt:'22 Oct 2026, 14:36'},
+    {id:5,artwork:'001',category:'Chinese Culture',group:'G2-G3',amount:420,name:'Sophie Chen',role:'Partners',childName:'',childGrade:'',phone:'+65 9567 8901',email:'sophie.chen@example.com',submittedAt:'22 Oct 2026, 16:11'}
+  ]}},
+  computed:{
+    artworkIds(){return [...new Set(this.bids.map(b=>b.artwork))]},artworkCount(){return this.artworkIds.length},highestBid(){return Math.max(0,...this.bids.map(b=>b.amount))},latestTime(){return this.bids.length?this.bids[this.bids.length-1].submittedAt:'—'},
+    filteredBids(){if(this.demoState==='empty')return[];const q=this.keyword.toLowerCase();return this.bids.filter(b=>(this.artworkFilter==='All'||b.artwork===this.artworkFilter)&&(this.roleFilter==='All'||b.role===this.roleFilter)&&(!q||[b.artwork,b.name,b.phone,b.email,b.childName].some(v=>String(v).toLowerCase().includes(q))))}
+  },
+  methods:{
+    resetFilters(){this.keyword='';this.artworkFilter='All';this.roleFilter='All'},
+    downloadCsv(){const headers=['Artwork No.','Primary Category','Grade Group','Bid Amount (CNY)','Bidder Name','Role','Child Name','Child Grade','Mobile Number','Email','Submitted At'];const rows=this.filteredBids.map(b=>[b.artwork,b.category,b.group,b.amount,b.name,b.role,b.childName,b.childGrade,b.phone,b.email,b.submittedAt]);const esc=v=>'"'+String(v??'').replace(/"/g,'""')+'"';const csv='\ufeff'+[headers,...rows].map(r=>r.map(esc).join(',')).join('\r\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='AISG-charity-auction-bidding-list.csv';a.click();URL.revokeObjectURL(url);this.toast=this.filteredBids.length+' bidding records downloaded.';setTimeout(()=>this.toast='',3000)}
+  }
+}).mount('#app');
+</script>
+</body>
+</html>
